@@ -4,6 +4,12 @@
 #include <nav_msgs/Odometry.h>
 #include <rosserial_arduino/Test.h>
 #include <string>
+#include <list>
+#include <tuple>
+
+#include <vector>
+#include <algorithm>
+#include <utility>
 
 #include "ros/ros.h"
 #include "sensor_msgs/LaserScan.h"
@@ -41,6 +47,9 @@ private:
     double v;
     double w;
 
+    int endX, endY;
+    int startX, startY;
+
 
     //Publisher Topics
     ros::Publisher cmd_vel_pub;
@@ -66,6 +75,7 @@ private:
     double front_obstacle_distance;
     double right_obstacle_distance;
     double left_obstacle_distance;
+
 
     geometry_msgs::Twist calculateCommand(){
         auto msg = geometry_msgs::Twist();
@@ -240,35 +250,227 @@ private:
         }
 
         */
-
         int cols = info.width, rows = info.height;
+        auto p = [&](int x, int y) { return x * cols + y;  };
+
+        //Binary map
         int** M = new int*[rows];
         for (int i = 0; i < rows; ++i){
             M[i] = new int[cols];
         }
+
+        //Potential filed
+        int** C = new int*[rows];
+        for (int i = 0; i < rows; ++i){
+            C[i] = new int[cols];
+        }
+
+        //Shortest path
+        int** P = new int*[rows];
+        for (int i = 0; i < rows; ++i){
+            P[i] = new int[cols];
+        }
         
-        for (int i = 0; i < rows; ++i) {   // for each row
+        std::cout << "\n\n BINARY MAP \n\n";
+        for (int i = (rows-1); i >= 0; --i) {   // for each row
             for (int j = 0; j < cols; ++j) { // for each column
-                if(msg->data[i + cols*j] > 0){
+                if(msg->data[i*cols + j] > 0){
                     M[i][j] = 1;
                 } else{
                     M[i][j] = 0;
                 }
-                //std::cout << M[i][j] << " ";
-            }
-            //std::cout << "\n";
-        }
-
-        
-        int k = 0;
-        for (int i = cols-1; i >= 0; i--) {   // for each column
-            for (int j = 0; j < rows; ++j) { // for each row
-
-                std::cout << M[j][i] << " ";
+                std::cout << M[i][j] << " ";
             }
             std::cout << "\n";
         }
+
+        for(int x = (rows-1); x >= 0; --x){
+            for(int y = 0; y < cols; y++){
+                if(x == 0 || y == 0 || x == (cols -1) || y == (rows -1) || M[x][y] == 1){
+                    C[rows-1-x][y] = -1;
+                }else{
+                    C[rows-1-x][y] = 0;
+                }
+            }
+        }
+
+
+
         
+        std::list<std::tuple<int,int,int>> nodes;
+
+        nodes.push_back({endX,endY,1});
+
+        while(!nodes.empty()){
+            std::list<std::tuple<int,int,int>> new_nodes;
+
+            for(auto &n : nodes){
+                int x = std::get<0>(n);
+                int y = std::get<1>(n);
+                int d = std::get<2>(n);
+
+                C[x][y] = d;
+
+                // Check south
+                if((x+1) < rows && C[x+1][y] == 0){
+                    new_nodes.push_back({x+1,y,d+1});
+                }
+                // Check north
+                if((x-1) >= 0 && C[x-1][y] == 0){
+                    new_nodes.push_back({x-1,y,d+1});
+                }
+                // Check east
+                if((y+1) < cols && C[x][y+1] == 0){
+                    new_nodes.push_back({x,y+1,d+1});
+                }
+                // Check west
+                if((y-1) >= 0 && C[x][y-1] == 0){
+                    new_nodes.push_back({x,y-1,d+1});
+                }
+
+                // Check south east
+                if((x+1) < rows && (y+1) < cols && C[x+1][y+1] == 0){
+                    new_nodes.push_back({x+1,y+1,d+1});
+                }
+                // Check north east
+                if((x-1) >= 0 && (y+1) < cols && C[x-1][y+1] == 0){
+                    new_nodes.push_back({x-1,y+1,d+1});
+                }
+                // Check south west
+                if((x+1) < rows && (y-1) >= 0 && C[x+1][y-1] == 0){
+                    new_nodes.push_back({x+1,y-1,d+1});
+                }
+                // Check north west
+                if((x-1) >= 0 && (y-1) >= 0  && C[x-1][y-1] == 0){
+                    new_nodes.push_back({x-1,y-1,d+1});
+                }
+
+
+            }
+            // Sort the nodes - This will stack up nodes that are similar: A, B, B, B, B, C, D, D, E, F, F
+            new_nodes.sort([&](const std::tuple<int, int, int> &n1, const std::tuple<int, int, int> &n2)
+            {
+                // In this instance I dont care how the values are sorted, so long as nodes that
+                // represent the same location are adjacent in the list. I can use the p() lambda
+                // to generate a unique 1D value for a 2D coordinate, so I'll sort by that.
+                return p(std::get<0>(n1), std::get<1>(n1)) < p(std::get<0>(n2), std::get<1>(n2));
+            });
+
+            // Use "unique" function to remove adjacent duplicates       : A, B, -, -, -, C, D, -, E, F -
+            // and also erase them                                       : A, B, C, D, E, F
+            new_nodes.unique([&](const std::tuple<int, int, int> &n1, const std::tuple<int, int, int> &n2)
+            {
+                return  p(std::get<0>(n1), std::get<1>(n1)) == p(std::get<0>(n2), std::get<1>(n2));
+            });
+
+            // We've now processed all the discoverd nodes, so clear the list, and add the newly
+            // discovered nodes for processing on the next iteration
+            nodes.clear();
+            nodes.insert(nodes.begin(), new_nodes.begin(), new_nodes.end());
+        }
+
+
+        std::cout << "\n\n VISUALIZABLE BINARY \n\n";
+        
+
+        for(int x = 0; x < rows; x++){
+            for(int y = 0; y < cols; y++){
+                //std::cout << C[x][y] << " ";
+                if(C[x][y] == -1){
+                    std::cout << "X ";
+                }
+                if(C[x][y] >= 0){
+                    std::cout << "- ";
+                }
+            }
+            std::cout << "\n";
+        }
+
+
+        std::list<std::pair<int,int>> path;
+        path.push_back({startX,startY});
+        int locX = startX;
+        int locY = startY;
+        bool no_path = false;
+
+        while(!(locX == endX && locY == endY) && !no_path){
+            std::list<std::tuple<int,int,int>> listNeighbours;
+
+            // Check south
+            if((locX+1) < rows && C[locX+1][locY] > 0){
+                listNeighbours.push_back({locX+1,locY,C[locX+1][locY]});
+            }
+            // Check north
+            if((locX-1) >= 0 && C[locX-1][locY] > 0){
+                listNeighbours.push_back({locX-1,locY,C[locX-1][locY]});
+            }
+            // Check east
+            if((locY+1) < cols && C[locX][locY+1] > 0){
+                listNeighbours.push_back({locX,locY+1,C[locX][locY+1]});
+            }
+            // Check west
+            if((locY-1) >= 0 && C[locX][locY-1] > 0){
+                listNeighbours.push_back({locX,locY-1,C[locX][locY-1]});
+            }
+
+            // Check south east
+            if((locX+1) < rows && (locY+1) < cols && C[locX+1][locY+1] > 0){
+                listNeighbours.push_back({locX+1,locY+1,C[locX+1][locY+1]});
+            }
+            // Check north east
+            if((locX-1) >= 0 && (locY+1) < cols && C[locX-1][locY+1] > 0){
+                listNeighbours.push_back({locX-1,locY+1,C[locX-1][locY+1]});
+            }
+            // Check south west
+            if((locX+1) < rows && (locY-1) >= 0 && C[locX+1][locY-1] > 0){
+                listNeighbours.push_back({locX+1,locY-1,C[locX+1][locY-1]});
+            }
+            // Check north west
+            if((locX-1) >= 0 && (locY-1) >= 0  && C[locX-1][locY-1] > 0){
+                listNeighbours.push_back({locX-1,locY-1,C[locX-1][locY-1]});
+            }
+
+
+            listNeighbours.sort([&](const std::tuple<int, int, int> &n1, const std::tuple<int, int, int> &n2)
+            {
+                return std::get<2>(n1) < std::get<2>(n2); // Compare distances
+            });
+
+            if (listNeighbours.empty()) // Neighbour is invalid or no possible path
+                no_path = true;
+            else
+            {
+                locX = std::get<0>(listNeighbours.front());
+                locY = std::get<1>(listNeighbours.front());
+                path.push_back({ locX, locY });
+            }
+
+        }
+
+        P = C;
+        int p_x, p_y;
+        for (auto &a : path){
+            p_x = a.first;
+            p_y = a.second;
+            P[p_x][p_y] = 0;
+        }
+
+        std::cout << "\n\n SHORTEST PATH \n\n";
+
+        for(int x = 0; x < rows; x++){
+            for(int y = 0; y < cols; y++){
+                if(P[x][y] == -1){
+                    std::cout << "X ";
+                }
+                if(P[x][y] == 0){
+                    std::cout << "O ";
+                }
+                if(P[x][y] > 0){
+                    std::cout << "- ";
+                }
+            }
+            std::cout << "\n";
+        }
 
 
 
@@ -284,6 +486,11 @@ private:
             delete [] M[i];
         }
         delete [] M;
+
+        for (int i = 0; i < rows; ++i){
+            delete [] C[i];
+        }
+        delete [] C;
 
         
     }
@@ -310,6 +517,11 @@ public:
         this->reactive_vel_sub = n.subscribe("reactive_vel", 10, &RobotDriver::reactiveVelCallback, this);
         this->map_sub = n.subscribe("map",10,&RobotDriver::mapCallback,this);
 
+
+        this->n.getParam("/startX", startX);
+        this->n.getParam("/startY", startY);
+        this->n.getParam("/endX", endX);
+        this->n.getParam("/endY", endY);
 
     }
 
