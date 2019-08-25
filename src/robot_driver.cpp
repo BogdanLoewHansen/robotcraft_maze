@@ -238,7 +238,7 @@ private:
             ROS_ERROR("Failed to call service ");
         }
     }
-
+    /*
     void mapCallback(const nav_msgs::OccupancyGrid::ConstPtr& msg){
         std_msgs::Header header = msg->header;
         nav_msgs::MapMetaData info = msg->info;
@@ -250,6 +250,8 @@ private:
         }
 
         */
+
+    	/*
         int cols = info.width, rows = info.height;
         auto p = [&](int x, int y) { return x * cols + y;  };
 
@@ -481,6 +483,7 @@ private:
         newGrid->info = info;
         map_pub.publish(*newGrid);
         */
+    	/*
         
         for (int i = 0; i < rows; ++i){
             delete [] M[i];
@@ -494,6 +497,7 @@ private:
 
         
     }
+    */
 
 
 public:
@@ -515,7 +519,7 @@ public:
         this->right_dist_sub = n.subscribe("base_scan_3", 10, &RobotDriver::rightCallback, this);
         this->front_dist_sub = n.subscribe("base_scan_1", 10, &RobotDriver::frontCallback, this);
         this->reactive_vel_sub = n.subscribe("reactive_vel", 10, &RobotDriver::reactiveVelCallback, this);
-        this->map_sub = n.subscribe("map",10,&RobotDriver::mapCallback,this);
+        //this->map_sub = n.subscribe("map",10,&RobotDriver::mapCallback,this);
 
 
         this->n.getParam("/startX", startX);

@@ -1,9 +1,11 @@
 <!-- maze.launch: launch stage with a maze_solver node -->
 
 <launch>
+
     <node pkg="stage_ros" type="stageros" name="stageros" args="$(find robotcraft_maze)/world/robotcraft_maze.world" />
     <include file="$(find robotcraft_maze)/launch/gmapping.launch"/>
     <include file="$(find robotcraft2019_robot_description)/launch/display_robotcraft2019.launch"/>
+    <include file="$(find robotcraft_maze)/launch/map_pgm.launch"/>
     
     <!-- Don't forget to create and compile your node and add it here -->
 
@@ -19,3 +21,4 @@
 	<param name="k_i" type="double" value="0.1" />
 
 </launch>  
+
